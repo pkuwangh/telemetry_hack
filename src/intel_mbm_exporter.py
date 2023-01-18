@@ -7,7 +7,7 @@ import sys
 import time
 from typing import Dict
 
-from prometheus_client import start_http_server, Gauge
+import prometheus_client
 from utils import read_env, read_sys_info, run_proc
 
 
@@ -24,14 +24,12 @@ class IntelMbmMetrics:
         # hardware system info
         self.sys_info = read_sys_info()
         # Prometheus metrics
-        self.mem_bw_variants = ["local", "remote", "all"]
-        self.mem_bw = {}
-        for node_idx in self.sys_info["cpu_list"].keys():
-            for variant in self.mem_bw_variants:
-                self.mem_bw[f"cpu{node_idx}_{variant}"] = Gauge(
-                    f"mbm_mem_bw_rw_cpu{node_idx}_{variant}",
-                    f"Mem BW from CPU-{node_idx} to {variant} node(s) in MB/s"
-                )
+        self.mem_bw = prometheus_client.Gauge(
+            "cpu_mem_bw",
+            "CPU memory bandwidth in MB/s",
+            labelnames=["cpu", "mem_node"]
+        )
+        self.mem_node_variants = ["local", "remote", "all"]
 
 
     def start_pqos(self):
@@ -67,10 +65,8 @@ class IntelMbmMetrics:
             items = line.strip().split()
             for node_idx, cpu_list in self.sys_info["cpu_list"].items():
                 if cpu_list.startswith(items[0]):
-                    for variant_idx in range(len(self.mem_bw_variants)):
-                        metric_key = f"cpu{node_idx}_{self.mem_bw_variants[variant_idx]}"
-                        metric_value = float(items[2 + variant_idx])
-                        self.mem_bw[metric_key].set(metric_value)
+                    for idx, mem_node in enumerate(self.mem_node_variants):
+                        self.mem_bw.labels(node_idx, mem_node).set(float(items[2 + idx]))
 
 
 def handler(signum, frame):
@@ -83,7 +79,12 @@ def handler(signum, frame):
 
 
 def main(args):
-    start_http_server(args.port)
+    # config prometheus client
+    prometheus_client.REGISTRY.unregister(prometheus_client.PLATFORM_COLLECTOR)
+    prometheus_client.REGISTRY.unregister(prometheus_client.GC_COLLECTOR)
+    # start http server
+    prometheus_client.start_http_server(args.port)
+    # setup metrics
     mbm_metrics = IntelMbmMetrics(args.interval)
     mbm_metrics.run_metrics_loop()
 
@@ -92,7 +93,7 @@ def init_parser():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument("--interval", "-i", type=int, default=10, help="interval in seconds")
+    parser.add_argument("--interval", "-i", type=int, default=15, help="interval in seconds")
     parser.add_argument("--port", "-p", type=int, default=9798, help="exporter port")
     return parser
 
