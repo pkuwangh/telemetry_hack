@@ -30,6 +30,11 @@ class IntelMbmMetrics:
             labelnames=["cpu", "mem_node"]
         )
         self.mem_node_variants = ["local", "remote", "all"]
+        self.ipc = prometheus_client.Gauge(
+            "ipc",
+            "Instructions per cycle",
+            labelnames=["cpu"]
+        )
 
 
     def start_pqos(self):
@@ -44,7 +49,7 @@ class IntelMbmMetrics:
         cmd = [
             os.path.join(pqos_root, "pqos/pqos"),
             "-r",
-            "--disable-mon-ipc", "--disable-mon-llc_miss",
+            "--disable-mon-llc_miss",
             "-i", str(10 * self.interval),
             "-m", f"{mon_term.rstrip(';')}"
         ]
@@ -66,7 +71,8 @@ class IntelMbmMetrics:
             for node_idx, cpu_list in self.sys_info["cpu_list"].items():
                 if cpu_list.startswith(items[0]):
                     for idx, mem_node in enumerate(self.mem_node_variants):
-                        self.mem_bw.labels(node_idx, mem_node).set(float(items[2 + idx]))
+                        self.mem_bw.labels(node_idx, mem_node).set(float(items[3 + idx]))
+                    self.ipc.labels(node_idx).set(float(items[1]))
 
 
 def handler(signum, frame):
